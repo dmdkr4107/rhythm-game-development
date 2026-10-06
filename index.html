@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>하재범 리듬게임</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<!-- 상단 네비게이션 (어느 화면에서든 탭 클릭하면 바로 이동) -->
+<div id="mainNav">
+  <div class="nav-logo" onclick="showTitle()" style="cursor:pointer;">RHYTHM <span>GAME</span></div>
+  <div class="nav-tabs">
+    <div class="nav-tab" data-nav="play" onclick="navGo('play')">▶ &nbsp;PLAY</div>
+    <div class="nav-tab" data-nav="skilltree" onclick="navGo('skilltree')">⬡ &nbsp;스킬 트리</div>
+    <div class="nav-tab" data-nav="skin" onclick="navGo('skin')">🎨 &nbsp;스킨</div>
+    <div class="nav-tab" data-nav="settings" onclick="navGo('settings')">⚙ &nbsp;설정</div>
+    <div class="nav-tab exit" data-nav="exit" onclick="navGo('exit')">✕ &nbsp;나가기</div>
+  </div>
+  <div class="nav-right">
+    <div id="authLoggedOut" style="display:flex;">
+      <button onclick="doLogin()" class="btn" style="padding:.5rem 1.1rem;font-size:.7rem;">🔑 &nbsp;로그인</button>
+    </div>
+    <div id="authLoggedIn" style="display:none;align-items:center;gap:.8rem;background:#13151f;border:1px solid #2a2d3e;padding:.5rem 1rem;border-radius:6px;">
+      <span id="authEmailDisplay" style="color:#8a8ea8;font-size:.7rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <span style="color:#f5c518;font-size:.75rem;">🪙 <span id="goldDisplay">0</span></span>
+      <span style="color:#4fc3f7;font-size:.75rem;">💎 <span id="diaDisplay">0</span></span>
+      <button onclick="doLogout()" style="background:transparent;border:1px solid #3a3d55;color:#8a8ea8;padding:.35rem .7rem;border-radius:4px;font-size:.65rem;cursor:pointer;font-family:'Orbitron',monospace;letter-spacing:.05em;">로그아웃</button>
+    </div>
+  </div>
+</div>
+
+<!-- 계정 로그인 / 회원가입 모달 -->
+<div id="authModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);justify-content:center;align-items:center;">
+  <div style="background:#0e0e1a;border:1px solid #333;border-radius:12px;padding:2rem;width:min(380px,90vw);">
+    <div style="font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.3em;color:#4fc3f7;margin-bottom:1.2rem;">ACCOUNT LOGIN</div>
+    <div id="authError" style="display:none;font-size:.78rem;color:#e05c7a;margin-bottom:1rem;line-height:1.5;"></div>
+    <label style="display:block;font-size:.68rem;color:#6a6e88;margin-bottom:.35rem;font-family:'Orbitron',monospace;letter-spacing:.1em;">EMAIL</label>
+    <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="username" style="width:100%;padding:.6rem .8rem;margin-bottom:1rem;background:#13151f;border:1px solid #2a2d3e;border-radius:6px;color:#d8dce8;font-size:.9rem;box-sizing:border-box;">
+    <label style="display:block;font-size:.68rem;color:#6a6e88;margin-bottom:.35rem;font-family:'Orbitron',monospace;letter-spacing:.1em;">PASSWORD</label>
+    <input id="authPassword" type="password" placeholder="6자 이상" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();_authSubmit('signin');}" style="width:100%;padding:.6rem .8rem;margin-bottom:1.4rem;background:#13151f;border:1px solid #2a2d3e;border-radius:6px;color:#d8dce8;font-size:.9rem;box-sizing:border-box;">
+    <div style="display:flex;gap:.6rem;">
+      <button onclick="_authSubmit('signin')" class="btn btn-primary" style="flex:1;font-size:.72rem;padding:.65rem;">로그인</button>
+      <button onclick="_authSubmit('signup')" class="btn" style="flex:1;font-size:.72rem;padding:.65rem;">회원가입</button>
+    </div>
+    <button onclick="closeAuthModal()" style="margin-top:1rem;width:100%;background:transparent;border:1px solid #444;color:#aaa;padding:.6rem;font-family:'Orbitron',monospace;font-size:.68rem;border-radius:6px;cursor:pointer;">닫기</button>
+    <button onclick="if(window._retryFirebaseInit)window._retryFirebaseInit();" style="margin-top:.6rem;width:100%;background:transparent;border:1px solid #2a2d3e;color:#6a6e88;padding:.5rem;font-family:'Orbitron',monospace;font-size:.62rem;border-radius:6px;cursor:pointer;">🔄 로그인 시스템 다시 불러오기</button>
+  </div>
+</div>
+
+<!-- TITLE -->
+<div id="titleScreen" class="screen active" style="position:relative;overflow:hidden;background:linear-gradient(180deg,#0a0512 0%,#1a0a2e 45%,#0a0512 100%);">
+  <div id="bgDecor"></div>
+  <div style="position:relative;z-index:2;text-align:center;display:flex;flex-direction:column;align-items:center;gap:1.2rem;">
+    <div class="title-eyebrow" style="justify-content:center;">RHYTHM · ACTION</div>
+    <div class="title-main" style="text-align:center;">
+      <span>RHYTHM</span>
+      <span class="line2">GAME</span>
+    </div>
+    <div class="title-sub">4-LANE RHYTHM ACTION</div>
+    <button class="btn btn-primary" onclick="showSelect()" style="font-size:1.1rem;padding:.9rem 3.2rem;letter-spacing:.3em;box-shadow:0 0 40px rgba(79,195,247,.45);">▶ &nbsp;PLAY</button>
+    <div style="display:flex;gap:1.4rem;margin-top:.6rem;">
+      <span onclick="showKeyConfig()" style="cursor:pointer;color:#6a6e88;font-size:.75rem;letter-spacing:.1em;font-family:'Orbitron',monospace;">⌨ 키 설정</span>
+      <span onclick="showHowTo()" style="cursor:pointer;color:#6a6e88;font-size:.75rem;letter-spacing:.1em;font-family:'Orbitron',monospace;">❓ 게임 방법</span>
+    </div>
+  </div>
+</div>
+
+<!-- SKILL TREE -->
+<div id="skillTreeScreen" class="screen">
+  <div class="sk-header">
+    <div class="sk-title">SKILL <span>TREE</span> <span id="devModeBadge" style="display:none;font-size:.6rem;background:#e05c7a;color:#fff;padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:.6rem;">🛠 DEV MODE · 재화 무제한</span></div>
+    <div class="sk-legend">
+      <span><span class="dot" style="background:#e0a300;"></span>🪙 골드</span>
+      <span><span class="dot" style="background:#1f8fd6;"></span>🎵 타격음</span>
+      <span><span class="dot" style="background:#5bc98a;"></span>🖼 배경 스킨</span>
+      <span><span class="dot" style="background:#ff8fc7;"></span>🔷 노트 스킨</span>
+      <span><span class="dot" style="background:#8b5cf6;"></span>💎 명예</span>
+      <span><span class="dot" style="background:#e0703a;"></span>✨ 콤보 이펙트</span>
+    </div>
+    <button class="btn" onclick="showTitle()" style="font-size:.65rem;padding:.5rem 1rem;">← BACK</button>
+  </div>
+  <div class="sk-wrap">
+    <div style="text-align:center;font-family:'Noto Sans KR',sans-serif;font-size:.7rem;color:#5a5d78;margin-bottom:.4rem;">가로로 스크롤해서 전체 트리를 볼 수 있어요 →</div>
+    <div class="sk-canvas" id="skCanvas">
+      <svg class="sk-lines" id="skLines"></svg>
+    </div>
+  </div>
+</div>
+<div class="sk-toast" id="skToast"></div>
+
+<!-- SKIN -->
+<div id="skinScreen" class="screen">
+  <div class="sk-header">
+    <div class="sk-title">SKIN <span>CLOSET</span></div>
+    <button class="btn" onclick="showTitle()" style="font-size:.65rem;padding:.5rem 1rem;">← BACK</button>
+  </div>
+  <div style="padding:1rem 2rem 0;text-align:center;font-family:'Noto Sans KR',sans-serif;font-size:.72rem;color:#5a5d78;">
+    보유한 스킨을 클릭해서 바로 장착하세요. 잠긴 스킨은 <span style="color:#8a8ea8;cursor:pointer;text-decoration:underline;" onclick="showSkillTree()">⬡ 스킬 트리</span>에서 언락할 수 있어요.
+  </div>
+  <div class="sk-skinbar" id="skSkinBar"></div>
+</div>
+
+<!-- SETTINGS -->
+
+<div id="settingScreen" class="screen">
+  <div class="setting-sidebar">
+    <div class="setting-sidebar-title">OPTIONS</div>
+    <button class="setting-tab active" id="stab-sound" onclick="switchSettingTab('sound')">SOUND</button>
+    <button class="setting-tab" id="stab-game" onclick="switchSettingTab('game')">GAMEPLAY</button>
+    <div style="flex:1"></div>
+    <button class="btn" onclick="showTitle()">← BACK</button>
+  </div>
+  <div class="setting-main" id="settingMain">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- KEY CONFIG -->
+<div id="keyScreen" class="screen">
+  <h2>KEY CONFIG</h2>
+  <div class="key-rows" id="keyRows"></div>
+  <div class="key-hint-txt">변경할 레인 클릭 후 원하는 키 입력 · ESC = 취소</div>
+  <div style="display:flex;gap:.8rem;margin-top:.8rem;">
+    <button class="btn" onclick="resetKeys()">↺ DEFAULT</button>
+    <button class="btn" onclick="showTitle()">← BACK</button>
+  </div>
+</div>
+
+<!-- SELECT -->
+<div id="selectScreen" class="screen">
+  <div class="select-left">
+    <div class="select-header">SELECT TRACK</div>
+    <div class="song-list" id="songList"></div>
+    <div class="diff-select" id="diffSelect">
+      <button class="diff-btn active active-easy" data-diff="easy"   onclick="setDiff(this)">EASY</button>
+      <button class="diff-btn"        data-diff="normal" onclick="setDiff(this)">NORMAL</button>
+      <button class="diff-btn"        data-diff="hard"   onclick="setDiff(this)">HARD</button>
+    </div>
+    <div class="select-btns">
+      <button class="btn" onclick="showTitle()">← BACK</button>
+    </div>
+  </div>
+  <div class="select-right">
+    <div style="text-align:center;">
+      <div class="select-song-title" id="selectSongTitle">네온 비트</div>
+      <div class="select-song-meta" id="selectSongMeta">BPM 128 · POP / DANCE</div>
+    </div>
+    <button class="btn btn-primary" onclick="startGame()" style="font-size:1rem;padding:.9rem 3.5rem;">▶ &nbsp;START</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="gameScreen" class="screen">
+  <div id="progressBar"><div id="progressFill"></div></div>
+  <div id="missFlash" style="position:absolute;inset:0;background:rgba(255,0,0,0);pointer-events:none;z-index:20;transition:background .05s;"></div>
+  <div id="hpBar" style="position:absolute;bottom:0;left:0;right:0;height:5px;z-index:15;background:#111;"><div id="hpFill" style="height:100%;width:100%;background:linear-gradient(90deg,#44ff88,#4fc3f7);transition:width .15s;"></div></div>
+  <canvas id="gameCanvas"></canvas>
+  <div id="hud">
+    <div class="hud-block"><div class="hud-label">Score</div><div class="hud-val" id="scoreDisplay">0</div></div>
+    <div class="hud-sep"></div>
+    <div class="hud-block"><div class="hud-label">Time</div><div class="hud-val" id="timeDisplay">0:00</div></div>
+    <div class="hud-sep"></div>
+    <div class="hud-block"><div class="hud-label">Accuracy</div><div class="hud-val" id="accDisplay">100%</div></div>
+    <div class="hud-sep"></div>
+    <div class="hud-block"><div class="hud-label">Difficulty</div><div class="hud-val" id="diffDisplay" style="font-size:.9rem">-</div></div>
+  </div>
+  <div id="comboDisplay"><div id="comboNum">0</div><div id="comboLabel">COMBO</div></div>
+  <div id="judgement"></div>
+  <button id="pauseBtn" onclick="togglePause()">ESC  ⏸</button>
+  <div id="countdownOverlay">
+    <div id="countdownNum">3</div>
+    <div id="countdownSong"></div>
+  </div>
+  <div id="pauseOverlay">
+    <div class="pause-title">PAUSED</div>
+    <div style="font-family:'Orbitron',monospace;font-size:.8rem;color:#888;margin-bottom:1rem;letter-spacing:.1em;">
+      SCORE <span id="pauseScore" style="color:#fff">0</span> &nbsp;|&nbsp;
+      COMBO <span id="pauseCombo" style="color:#c8a84b">0</span> &nbsp;|&nbsp;
+      ACC <span id="pauseAcc" style="color:#4fc3f7">100%</span>
+    </div>
+    <button class="btn btn-primary" onclick="togglePause()">▶ RESUME</button>
+    <button class="btn" onclick="quitGame()">✕ QUIT</button>
+  </div>
+</div>
+
+<!-- RESULT -->
+<div id="resultScreen" class="screen">
+  <div class="result-left">
+    <div id="resultTitle">CLEAR</div>
+    <div id="resultGrade">S</div>
+    <div id="resultSongName">네온 비트</div>
+  </div>
+  <div class="result-right">
+    <div class="result-right-header">RESULT DATA</div>
+    <div class="result-stats">
+      <div class="result-row"><span class="stat-label">SCORE</span><span class="stat-val" id="rScore">0</span></div>
+      <div id="newBestBanner" style="display:none;font-family:'Orbitron',monospace;font-size:.75rem;letter-spacing:.3em;color:#ffe066;text-shadow:0 0 20px #ffe066;margin-top:.3rem;">★ NEW BEST! ★</div>
+      <div class="result-row"><span class="stat-label">ACCURACY</span><span class="stat-val" id="rAcc">0%</span></div>
+      <div class="result-row"><span class="stat-label">MAX COMBO</span><span class="stat-val" id="rCombo">0</span></div>
+      <div class="result-row"><span class="stat-label">PERFECT</span><span class="stat-val" id="rPerfect" style="color:#c8a84b">0</span></div>
+      <div class="result-row"><span class="stat-label">GOOD</span><span class="stat-val" id="rGood" style="color:#5bc98a">0</span></div>
+      <div class="result-row"><span class="stat-label">MISS</span><span class="stat-val" id="rMiss" style="color:#d94f4f">0</span></div>
+    </div>
+    <div id="rewardDisplay" style="display:none;font-family:'Orbitron',monospace;font-size:1rem;color:#f5c518;letter-spacing:.2em;margin-bottom:.8rem;text-shadow:0 0 15px #f5c518;"></div>
+    <div class="result-btns">
+      <button class="btn btn-primary" onclick="showSelect()">↺ RETRY</button>
+      <button class="btn" onclick="nextSong()">→ NEXT</button>
+      <button class="btn" onclick="showTitle()">⌂ TITLE</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/game.js"></script>
+
+<div id="howToModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);justify-content:center;align-items:center;">
+  <div style="background:#0e0e1a;border:1px solid #333;border-radius:12px;padding:2rem;width:min(480px,90vw);">
+    <div style="font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.3em;color:#4fc3f7;margin-bottom:1.2rem;">HOW TO PLAY</div>
+    <div style="font-size:.85rem;line-height:2.4;color:#aaa;">
+      A / S / K / L 키로 내려오는 노트를 판정선에 맞춰 누르세요<br>
+      롱노트는 키를 눌러서 끝까지 유지하세요<br>
+      PERFECT✦ = 100점 / GOOD = 50점 / MISS = 0점<br>
+      미스가 쌓여 HP가 0이 되면 FAILED (폭사)<br>
+      ESC 키로 일시정지 / 방향키로 곡 선택
+    </div>
+    <button onclick="document.getElementById('howToModal').style.display='none'"
+      style="margin-top:1.4rem;width:100%;background:transparent;border:1px solid #444;color:#aaa;padding:.6rem;font-family:'Orbitron',monospace;font-size:.7rem;border-radius:6px;cursor:pointer;">닫기</button>
+  </div>
+</div>
+
+<!-- 싱크 테스트 모달 (얼불춤 스타일 박자 맞추기로 오프셋 자동 계산) -->
+<div id="syncTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.88);backdrop-filter:blur(6px);justify-content:center;align-items:center;">
+  <div style="background:#0e0e1a;border:1px solid #333;border-radius:12px;padding:2rem;width:min(420px,90vw);text-align:center;">
+    <div style="font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.3em;color:#4fc3f7;margin-bottom:.6rem;">SYNC TEST</div>
+    <div style="font-size:.78rem;color:#888;margin-bottom:1.4rem;line-height:1.6;">박자에 맞춰 <b style="color:#d8dce8;">SPACE 키</b>를 누르거나 아래 원을 탭하세요<br>8번 정도 맞추면 자동으로 추천 오프셋이 나와요</div>
+
+    <div id="syncPulseWrap" style="display:flex;align-items:center;justify-content:center;height:150px;margin-bottom:1.2rem;" onclick="syncTestTap()">
+      <div id="syncPulse" style="width:90px;height:90px;border-radius:50%;background:radial-gradient(circle,#4fc3f7,#7c6af7);cursor:pointer;transition:transform .08s;box-shadow:0 0 30px rgba(79,195,247,.5);"></div>
+    </div>
+
+    <div style="font-family:'Orbitron',monospace;font-size:.8rem;color:#d8dce8;margin-bottom:.3rem;">
+      탭 <span id="syncTapCount">0</span>/8 &nbsp;·&nbsp; 추천 오프셋 <span id="syncRecommend" style="color:#4fc3f7;">-</span>
+    </div>
+    <div style="font-size:.68rem;color:#5a5d78;margin-bottom:1.2rem;">※ 노트가 아니라 순수 박자 감각 기준이라 참고용이에요. 적용 후에도 미세 조정 해보세요.</div>
+
+    <div style="display:flex;gap:.6rem;">
+      <button class="btn" onclick="restartSyncTest()" style="flex:1;font-size:.68rem;">↺ 다시</button>
+      <button class="btn btn-primary" id="syncApplyBtn" onclick="applySyncTestResult()" disabled style="flex:1;font-size:.68rem;opacity:.4;">✓ 적용</button>
+      <button class="btn" onclick="closeSyncTest()" style="flex:1;font-size:.68rem;">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Firebase Auth 초기화 (이메일/비밀번호 로그인) ──
+     ⚠ type="module" + import() 방식은 file://로 열면 브라우저가 모듈 로딩 자체를
+     차단해서 로그인 버튼이 "불러오는 중"에서 영원히 멈추는 문제가 있었음.
+     그래서 일반 <script> 태그로 compat(UMD) 빌드를 불러오는 방식으로 변경.
+     추가로: 정적 <script src> 태그는 한 번 로드에 실패하면(네트워크 순단 등)
+     그걸로 끝이라 재시도가 없었음 → 아래처럼 JS로 동적 로딩 + 재시도(최대 3회,
+     캐시버스팅 포함) + 수동 재시도 버튼을 넣어서 일시적 실패에서도 복구되게 함. -->
+<script src="assets/js/firebase.js"></script>
+</body>
+</html>
