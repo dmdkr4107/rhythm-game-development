@@ -44,7 +44,12 @@
       : '로그인 시스템을 불러오는 중이에요. 잠시 후 다시 눌러주세요.';
   };
   // 로딩 실패 후 수동 재시도용 (모달에 "다시 시도" 버튼에서 호출)
-  window._retryFirebaseInit = function(){ initFirebase(); };
+  let initializationPromise = null;
+  window._retryFirebaseInit = function(){
+    if(initializationPromise) return initializationPromise;
+    initializationPromise = initFirebase().finally(function(){ initializationPromise = null; });
+    return initializationPromise;
+  };
 
   async function initFirebase(){
    try {
@@ -67,6 +72,8 @@
     if(!firebase.apps || !firebase.apps.length){
       firebase.initializeApp(firebaseConfig);
     }
+    fbLoadFailed = false;
+    fbFailDetail = '';
     const auth = firebase.auth();
     const db   = firebase.firestore();
 
@@ -168,5 +175,5 @@
   }
   } // end initFirebase
 
-  await initFirebase();
+  await window._retryFirebaseInit();
 })();
