@@ -23,7 +23,7 @@ for (const path of ['assets/css/styles.css', 'assets/js/game.js', 'assets/js/fir
   }
 }
 for (const id of ['gameCanvas', 'scoreDisplay', 'comboNum', 'pauseOverlay', 'resultScreen']) {
-  if (!new RegExp('\\bid=["\\\']' + id + '["\\\']').test(html)) {
+  if (!html.includes('id="' + id + '"') && !html.includes("id='" + id + "'")) {
     throw new Error('Missing game UI element: ' + id);
   }
 }
