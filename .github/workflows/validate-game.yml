@@ -18,3 +18,6 @@ jobs:
           node --check assets/js/firebase.js
       - name: Check required files and HTML references
         run: node tests/static-check.mjs
+
+      - name: Check gameplay regressions
+        run: node tests/game-regression.mjs

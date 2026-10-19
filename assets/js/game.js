@@ -482,7 +482,7 @@ function beep(freq,dur,vol,type,dest){
 // ⚠ 개발/테스트 모드: 골드·다이아 무제한, 스킬 트리 전 노드 구매 가능
 // 다 됐다 싶으면 false로 바꿔서 끄면 됨 (사용자가 "그만"이라고 할 때까지 켜둠)
 const DEV_MODE = true;
-let HIT_SOUND_TYPE = parseInt(localStorage.getItem('hitSoundType')||'0',10)||0;
+let HIT_SOUND_TYPE = (function(){ try{ return parseInt(localStorage.getItem('hitSoundType')||'0',10)||0; }catch(e){ return 0; } })();
 let SYNC_OFFSET = 0;
 let NOTE_SIZE_MULT = 1.0;
 function updateSync(val){ SYNC_OFFSET=parseInt(val); document.getElementById('valSync').textContent=val+'ms'; }
@@ -667,6 +667,7 @@ function playDecodedBuffer(decoded, travelMs, songId){
   currentAudioSource = src;
   currentAudioGain = gainNode;
   const startAt = audioCtx.currentTime + Math.max(0.05, travelMs/1000);
+  if(gameState) gameState.audioStartTime=startAt;
   src.start(startAt);
   // whEn_thE_nights (songId=0): 전체 -20%, 구간 추가 -40%
   if(songId === 0){
@@ -686,15 +687,22 @@ function playDecodedBuffer(decoded, travelMs, songId){
   }
 }
 
-function scheduleMusic(songId, travelMs){
+function scheduleMusic(songId, travelMs, onReady){
   stopMusic();
   initAudio();
+  const session = gameState;
+  function ready(){
+    if(gameState!==session || !session || session.ended) return;
+    if(session.audioStartTime===undefined) session.audioStartTime = audioCtx.currentTime + Math.max(0.05, travelMs/1000);
+    if(onReady) onReady();
+  }
   const song = SONGS[songId];
   if(!song) return;
   if(song.audioSrc){
     if(decodedCache[songId]){
       // 이미 디코딩된 캐시 사용
       playDecodedBuffer(decodedCache[songId], travelMs, songId);
+      ready();
     } else {
       const b64 = song.audioSrc.split(',')[1];
       const bin = atob(b64);
@@ -702,13 +710,16 @@ function scheduleMusic(songId, travelMs){
       for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
       audioCtx.decodeAudioData(buf.buffer.slice(0), (decoded)=>{
         decodedCache[songId] = decoded;
-        if(!gameState) return;
+        if(gameState!==session || !session || session.ended) return;
         playDecodedBuffer(decoded, travelMs, songId);
+        ready();
       }, (e)=>console.error('decodeAudioData error:', e));
     }
   } else if(song.schedFn){
-    const t0 = audioCtx.currentTime + travelMs/1000;
+    const t0 = audioCtx.currentTime + Math.max(0.05, travelMs/1000);
+    if(session) session.audioStartTime=t0;
     song.schedFn(t0);
+    ready();
   }
 }
 
@@ -1386,7 +1397,9 @@ function layout(){
 //  START GAME
 // ═══════════════════════════════════════════════
 function startGame(){
+  stopGame();
   initAudio();
+  if(audioCtx.state==='suspended') audioCtx.resume();
   const song=SONGS[selectedSong];
   const map=song.maps[selectedDiff].map(n=>({...n}));
 
@@ -1420,9 +1433,11 @@ function startGame(){
   document.getElementById('countdownSong').textContent=song.name+' · '+selectedDiff.toUpperCase();
   overlay.classList.add('visible');
 
+  const session=gameState;
+  touchLaneMap.clear();
   let count=3;
   function tick(){
-    if(!gameState) return;
+    if(gameState!==session) return;
     playCountBeep(count);
     numEl.classList.remove('pop'); void numEl.offsetWidth; numEl.classList.add('pop');
     numEl.textContent=count>0?count:'GO!';
@@ -1430,11 +1445,12 @@ function startGame(){
     count--;
     if(count>=0) setTimeout(tick,1000);
     else setTimeout(()=>{
-      if(!gameState) return;
-      overlay.classList.remove('visible');
-      gameState.counting=false;
-      scheduleMusic(selectedSong, gameState.travelMs);
-      animFrame=requestAnimationFrame(gameLoop);
+      if(gameState!==session) return;
+      scheduleMusic(selectedSong, session.travelMs, ()=>{
+        overlay.classList.remove('visible');
+        session.counting=false;
+        animFrame=requestAnimationFrame(gameLoop);
+      });
     },800);
   }
   tick();
@@ -1446,20 +1462,24 @@ function stopGame(){
   document.getElementById('countdownOverlay').classList.remove('visible');
   document.getElementById('pauseOverlay').classList.remove('visible');
   gameState=null;
+  if(audioCtx && audioCtx.state==='suspended') audioCtx.resume();
 }
 function quitGame(){ stopGame(); showTitle(); }
 function nextSong(){ selectedSong=(selectedSong+1)%SONGS.length; startGame(); }
 
 function togglePause(){
-  if(!gameState||gameState.counting) return;
+  if(!gameState||gameState.counting||gameState.ended||gameState.failing) return;
   const ov=document.getElementById('pauseOverlay');
   if(gameState.paused){
-    gameState.startTime+=performance.now()-gameState.pauseTime;
+    if(audioCtx) audioCtx.resume();
     gameState.paused=false; ov.classList.remove('visible');
+    // 정지 중 놓은 키는 재개 시 한 번만 해제 판정합니다.
+    gameState.lanePress.forEach((pressed,lane)=>{ if(!pressed) handleRelease(lane); });
     animFrame=requestAnimationFrame(gameLoop);
   } else {
     gameState.paused=true; gameState.pauseTime=performance.now();
-    ov.classList.add('visible'); cancelAnimationFrame(animFrame); stopMusic();
+    ov.classList.add('visible'); cancelAnimationFrame(animFrame);
+    if(audioCtx) audioCtx.suspend();
   }
 }
 
@@ -1467,15 +1487,15 @@ function togglePause(){
 //  GAME LOOP
 // ═══════════════════════════════════════════════
 function gameLoop(ts){
-  if(!gameState||gameState.paused||gameState.counting) return;
-  if(!gameState.startTime) gameState.startTime=ts+gameState.travelMs;
-  gameState.elapsed=ts-gameState.startTime;
-  spawnNotes(); updateNotes(); autoMiss(); checkLongHolds();
+  if(!gameState||gameState.paused||gameState.counting||gameState.ended) return;
+  updateGameTime();
+  spawnNotes(); updateNotes(); checkLongHolds(); autoMiss();
   drawFrame(); updateHUD();
   const allSpawned=gameState.noteIdx>=gameState.map.length;
   const allGone=gameState.activeNotes.length===0;
   if(gameState.hp!==undefined&&gameState.hp<=0&&!gameState.failing){
     gameState.failing=true;
+    const failedSession=gameState;
 
     // 1. 음악 피치 다운 + 페이드
     if(currentAudioGain&&audioCtx){
@@ -1518,11 +1538,11 @@ function gameLoop(ts){
     // 결과화면
     setTimeout(()=>{
       overlay.remove(); failEl.remove();
-      endGame();
+      if(gameState===failedSession) endGame();
     },2800);
   }
-  if(allSpawned&&allGone){ endGame(); return; }
-  if(gameState.elapsed>gameState.totalMs+500){ endGame(); return; }
+  if(!gameState.failing && allSpawned&&allGone && gameState.elapsed>=gameState.song.durMs){ endGame(); return; }
+  if(!gameState.failing && gameState.elapsed>gameState.totalMs+500){ endGame(); return; }
   animFrame=requestAnimationFrame(gameLoop);
 }
 
@@ -1570,10 +1590,11 @@ function autoMiss(){
 function checkLongHolds(){
   gameState.activeNotes.forEach(n=>{
     if(!n.isLong||!n.held||n.released) return;
-    if(!n.lastTick) n.lastTick=gameState.elapsed;
-    if(gameState.elapsed-n.lastTick>=100){
-      n.lastTick=gameState.elapsed;
-      gameState.score+=5;
+    if(n.lastTick===undefined) n.lastTick=gameState.elapsed;
+    const ticks=Math.floor((Math.min(gameState.elapsed,n.targetTime+n.holdMs)-n.lastTick)/100);
+    if(ticks>0){
+      n.lastTick+=ticks*100;
+      gameState.score+=5*ticks;
       // 홀드 중 판정 표시 (레인 색상으로)
       if(TOGGLES.showJudge) showJudge('HOLD ♪', COLORS[n.lane]);
     }
@@ -1983,8 +2004,14 @@ document.addEventListener('keyup',e=>{
   gameState.lanePress[lane]=false; handleRelease(lane);
 });
 
+function updateGameTime(){
+  if(gameState && audioCtx && gameState.audioStartTime!==undefined){
+    gameState.elapsed=(audioCtx.currentTime-gameState.audioStartTime)*1000;
+  }
+}
 function handlePress(lane){
-  if(gameState.failing) return;
+  if(!gameState||gameState.paused||gameState.ended||gameState.counting||gameState.failing) return;
+  updateGameTime();
   const now=gameState.elapsed;
   if(now < 0) return; // 노트가 아직 위에서 내려오는 중
   let best=null,bestDiff=Infinity;
@@ -1999,16 +2026,19 @@ function handlePress(lane){
   const earlyLate=best.targetTime>gameState.elapsed?'EARLY':'LATE';
   best.hit=true;
   if(bestDiff<=PERFECT_WIN){
-    if(best.isLong){best.held=true;if(TOGGLES.showJudge)showJudge('HOLD!',COLORS[lane]);playHitSound(lane,'PERFECT');}
+    if(best.isLong){best.held=true;best.lastTick=now;if(TOGGLES.showJudge)showJudge('HOLD!',COLORS[lane]);playHitSound(lane,'PERFECT');}
     else registerJudgement('PERFECT',lane);
   } else {
-    if(best.isLong){best.held=true;if(TOGGLES.showJudge)showJudge('HOLD!',COLORS[lane]);playHitSound(lane,'GOOD');}
+    if(best.isLong){best.held=true;best.lastTick=now;if(TOGGLES.showJudge)showJudge('HOLD!',COLORS[lane]);playHitSound(lane,'GOOD');}
     else{ registerJudgement('GOOD',lane); if(TOGGLES.showJudge) setTimeout(()=>showJudge(earlyLate,'#888888'),300); }
   }
 }
 function handleRelease(lane){
+  if(!gameState||gameState.paused||gameState.ended||gameState.counting||gameState.failing) return;
+  updateGameTime();
   gameState.activeNotes.forEach(n=>{
     if(!n.isLong||!n.held||n.released||n.lane!==lane) return;
+    checkLongHolds();
     n.held=false;
     const earlyBy=(n.targetTime+n.holdMs)-gameState.elapsed;
     if(earlyBy>GOOD_WIN)         { n.released=true; registerJudgement('MISS',lane); }
@@ -2021,6 +2051,7 @@ function handleRelease(lane){
 //  END GAME
 // ═══════════════════════════════════════════════
 function endGame(){
+  if(!gameState||gameState.ended) return;
   gameState.ended=true; stopMusic(); cancelAnimationFrame(animFrame);
   const total=gameState.perfect+gameState.good+gameState.miss;
   const acc=total?((gameState.perfect+gameState.good*.5)/total*100).toFixed(2):'100.00';
@@ -2078,6 +2109,7 @@ gameScreenEl.addEventListener('touchend', e=>{
     const lane = touchLaneMap.get(touch.identifier);
     touchLaneMap.delete(touch.identifier);
     if(lane === undefined || !gameState) return;
+    if(Array.from(touchLaneMap.values()).includes(lane)) return;
     gameState.lanePress[lane] = false;
     handleRelease(lane);
   });
@@ -2088,6 +2120,7 @@ gameScreenEl.addEventListener('touchcancel', e=>{
     const lane = touchLaneMap.get(touch.identifier);
     touchLaneMap.delete(touch.identifier);
     if(lane === undefined || !gameState) return;
+    if(Array.from(touchLaneMap.values()).includes(lane)) return;
     gameState.lanePress[lane] = false;
     handleRelease(lane);
   });
