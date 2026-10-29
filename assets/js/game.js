@@ -1486,14 +1486,9 @@ function togglePause(){
 // ═══════════════════════════════════════════════
 //  GAME LOOP
 // ═══════════════════════════════════════════════
-function gameLoop(ts){
-  if(!gameState||gameState.paused||gameState.counting||gameState.ended) return;
-  updateGameTime();
-  spawnNotes(); updateNotes(); checkLongHolds(); autoMiss();
-  drawFrame(); updateHUD();
-  const allSpawned=gameState.noteIdx>=gameState.map.length;
-  const allGone=gameState.activeNotes.length===0;
-  if(gameState.hp!==undefined&&gameState.hp<=0&&!gameState.failing){
+// 프레임과 입력 어느 쪽에서도 기존 실패 연출을 한 번만 시작합니다.
+function startFailure(){
+  if(!gameState||gameState.ended||gameState.failing||!(gameState.hp<=0)) return;
     gameState.failing=true;
     const failedSession=gameState;
 
@@ -1540,7 +1535,16 @@ function gameLoop(ts){
       overlay.remove(); failEl.remove();
       if(gameState===failedSession) endGame();
     },2800);
-  }
+}
+
+function gameLoop(ts){
+  if(!gameState||gameState.paused||gameState.counting||gameState.ended) return;
+  updateGameTime();
+  spawnNotes(); updateNotes(); autoMiss();
+  drawFrame(); updateHUD();
+  const allSpawned=gameState.noteIdx>=gameState.map.length;
+  const allGone=gameState.activeNotes.length===0;
+  startFailure();
   if(!gameState.failing && allSpawned&&allGone && gameState.elapsed>=gameState.song.durMs){ endGame(); return; }
   if(!gameState.failing && gameState.elapsed>gameState.totalMs+500){ endGame(); return; }
   animFrame=requestAnimationFrame(gameLoop);
@@ -1566,32 +1570,51 @@ function updateNotes(){
     if(n.isLong) n.tailY=judgeY-(n.targetTime+n.holdMs-gameState.elapsed)/1000*NOTE_SPEED;
   });
 }
+// 입력 허용 끝 시각까지는 판정을 기다리고, 그 시각을 넘긴 뒤 MISS 처리합니다.
+function getInputWindow(){
+  return GOOD_WIN*1.5;
+}
 function autoMiss(){
-  gameState.activeNotes=gameState.activeNotes.filter(n=>{
-    if(n.hit){
-      if(n.isLong){
-        if(n.held){
-          if(gameState.elapsed>=n.targetTime+n.holdMs+MISS_WINDOW){
-            registerJudgement('PERFECT',n.lane,true); n.released=true; return false;
-          }
-          return true;
-        }
-        if(!n.released){ if(gameState.elapsed>n.targetTime+n.holdMs+MISS_WINDOW) return false; return true; }
-        return false;
-      }
-      return false;
+  if(!gameState||gameState.failing||gameState.ended) return;
+  startFailure();
+  if(gameState.failing) return;
+  const events=[];
+  // 도래한 자동 판정을 발생 시각순으로 처리합니다. 동률은 롱 종료, 레인 순입니다.
+  gameState.activeNotes.forEach(note=>{
+    if(note.isLong&&note.hit&&note.held&&!note.released){
+      const time=note.targetTime+note.holdMs+MISS_WINDOW;
+      if(gameState.elapsed>=time) events.push({note,time,type:'PERFECT'});
+    } else if(!note.hit){
+      const time=note.targetTime+getInputWindow();
+      if(gameState.elapsed>time) events.push({note,time,type:'MISS'});
     }
-    if(gameState.elapsed>n.targetTime+MISS_WINDOW){ registerJudgement('MISS',n.lane); return false; }
-    // 안전망: 이미 음악이 한참 지났으면 조용히 제거
-    if(gameState.elapsed>gameState.totalMs+500) return false;
-    return true;
+  });
+  events.sort((a,b)=>a.time-b.time||
+    (a.type==='PERFECT'?0:1)-(b.type==='PERFECT'?0:1)||
+    a.note.lane-b.note.lane||a.note.targetTime-b.note.targetTime);
+  for(const event of events){
+    // 실패 시각보다 뒤의 홀드 점수를 미리 지급하지 않습니다.
+    checkLongHolds(event.time);
+    const note=event.note;
+    if(event.type==='PERFECT'){note.held=false;note.released=true;}
+    gameState.activeNotes=gameState.activeNotes.filter(active=>active!==note);
+    registerJudgement(event.type,note.lane,event.type==='PERFECT');
+    startFailure();
+    if(gameState.failing) return;
+  }
+  checkLongHolds();
+  gameState.activeNotes=gameState.activeNotes.filter(note=>{
+    if(!note.hit) return !(gameState.elapsed>gameState.totalMs+500);
+    if(!note.isLong||note.released) return false;
+    return note.held||gameState.elapsed<=note.targetTime+note.holdMs+MISS_WINDOW;
   });
 }
-function checkLongHolds(){
+function checkLongHolds(until=gameState.elapsed){
+  if(gameState.failing||gameState.ended) return;
   gameState.activeNotes.forEach(n=>{
     if(!n.isLong||!n.held||n.released) return;
     if(n.lastTick===undefined) n.lastTick=gameState.elapsed;
-    const ticks=Math.floor((Math.min(gameState.elapsed,n.targetTime+n.holdMs)-n.lastTick)/100);
+    const ticks=Math.floor((Math.min(until,n.targetTime+n.holdMs)-n.lastTick)/100);
     if(ticks>0){
       n.lastTick+=ticks*100;
       gameState.score+=5*ticks;
@@ -1881,6 +1904,7 @@ function updateHUD(){
 //  JUDGEMENT
 // ═══════════════════════════════════════════════
 function registerJudgement(type,lane,isLongEnd=false){
+  if(!gameState||gameState.failing||gameState.ended) return;
   const {startX,laneW,judgeY,noteR}=layout();
   const cx=startX+lane*laneW+laneW/2;
   const laneCol=COLORS[lane];
@@ -1909,6 +1933,7 @@ function registerJudgement(type,lane,isLongEnd=false){
   }
   if(gameState.combo>gameState.maxCombo) gameState.maxCombo=gameState.combo;
   triggerComboEffects(gameState.combo);
+  startFailure();
 }
 function triggerComboEffects(combo){
   const dev = typeof DEV_MODE!=='undefined' && DEV_MODE;
@@ -2014,6 +2039,10 @@ function handlePress(lane){
   updateGameTime();
   const now=gameState.elapsed;
   if(now < 0) return; // 노트가 아직 위에서 내려오는 중
+  // 프레임보다 입력이 먼저 와도 지난 노트를 같은 기준으로 정리합니다.
+  autoMiss();
+  startFailure();
+  if(gameState.failing) return;
   let best=null,bestDiff=Infinity;
   gameState.activeNotes.forEach(n=>{
     if(n.hit||n.lane!==lane) return;
@@ -2022,7 +2051,7 @@ function handlePress(lane){
   });
   // GOOD_WIN 넘어도 activeNotes에 있는 노트면 GOOD으로 처리 (키 눌렀는데 MISS 방지)
   if(!best) return;
-  if(bestDiff>GOOD_WIN*1.5) return; // 너무 멀리 벗어난 경우만 무시
+  if(bestDiff>getInputWindow()) return; // 너무 멀리 벗어난 경우만 무시
   const earlyLate=best.targetTime>gameState.elapsed?'EARLY':'LATE';
   best.hit=true;
   if(bestDiff<=PERFECT_WIN){
@@ -2036,8 +2065,10 @@ function handlePress(lane){
 function handleRelease(lane){
   if(!gameState||gameState.paused||gameState.ended||gameState.counting||gameState.failing) return;
   updateGameTime();
+  autoMiss();
+  if(gameState.failing) return;
   gameState.activeNotes.forEach(n=>{
-    if(!n.isLong||!n.held||n.released||n.lane!==lane) return;
+    if(gameState.failing||!n.isLong||!n.held||n.released||n.lane!==lane) return;
     checkLongHolds();
     n.held=false;
     const earlyBy=(n.targetTime+n.holdMs)-gameState.elapsed;
